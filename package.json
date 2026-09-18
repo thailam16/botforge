@@ -1,0 +1,24 @@
+{
+  "name": "botforge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Khung sườn tạo chatbot Telegram đa năng (persona + plugin) chạy 24/7 trên Cloudflare Workers",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build:config": "node scripts/build-config.mjs",
+    "predeploy": "npm run build:config",
+    "deploy": "wrangler deploy",
+    "dev": "npm run build:config && wrangler dev",
+    "db:init": "wrangler d1 execute botforge --remote --file=schema.sql",
+    "db:init:local": "wrangler d1 execute botforge --local --file=schema.sql",
+    "webhook": "node scripts/set-webhook.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run build:config && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.0",
+    "yaml": "^2.8.1"
+  }
+}

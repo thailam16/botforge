@@ -1,0 +1,26 @@
+# Cấu hình Cloudflare Worker.
+# `npm run setup` sẽ chép file này thành wrangler.toml và điền database_id giúp bạn.
+name = "botforge"
+main = "src/index.js"
+compatibility_date = "2025-09-23"
+workers_dev = true
+
+# Cơ sở dữ liệu D1 (SQLite chạy trên Cloudflare, gói miễn phí đủ dùng).
+# Tạo bằng: npx wrangler d1 create botforge  -> dán database_id vào đây.
+[[d1_databases]]
+binding = "DB"
+database_name = "botforge"
+database_id = ""
+
+# Nhịp tim cho lịch chủ động: 5 phút một lần.
+# Bot dùng nhịp này để bắn lời nhắc, tổng kết ngày, chắt lọc trí nhớ...
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true
+
+# Khoá bí mật KHÔNG để ở đây. Dùng:
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put TELEGRAM_TOKEN_<KEY BOT VIẾT HOA>
+#   npx wrangler secret put WEBHOOK_SECRET_<KEY BOT VIẾT HOA>

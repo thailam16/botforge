@@ -1,0 +1,53 @@
+name: Kiểm tra & triển khai
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Chạy kiểm thử
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Kiểm tra cú pháp và cấu hình bot
+        run: npm run check
+      - name: Chạy test
+        run: npm test
+
+  deploy:
+    name: Đưa lên Cloudflare
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Cần 2 secret trong repo (Settings -> Secrets and variables -> Actions):
+      #   CLOUDFLARE_API_TOKEN  — token có quyền "Edit Cloudflare Workers"
+      #   CLOUDFLARE_ACCOUNT_ID — id tài khoản Cloudflare
+      # Repo chưa cấu hình secret thì bỏ qua bước deploy thay vì báo đỏ.
+      - name: Kiểm tra secret Cloudflare
+        id: guard
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Chưa có CLOUDFLARE_API_TOKEN — bỏ qua bước triển khai."
+          fi
+      - name: wrangler deploy
+        if: steps.guard.outputs.skip != 'true'
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
