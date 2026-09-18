@@ -12,7 +12,16 @@ export function createLLM(bot, env) {
     .map((cfg) => buildOne(cfg, env))
     .filter(Boolean);
 
-  if (!chain.length) throw new Error(`Bot "${bot.key}": chưa cấu hình được LLM (thiếu API key?)`);
+  // Thiếu khoá thì KHÔNG ném lỗi ngay: bot vẫn phải trả lời được /status và /help
+  // để chủ bot biết đường sửa, thay vì im lặng như chết.
+  if (!chain.length) {
+    return {
+      providers: ['(chưa cấu hình khoá API)'],
+      async chat() {
+        throw Object.assign(new Error(`Bot "${bot.key}" chưa có khoá API cho ${bot.llm.provider}.`), { config: true });
+      },
+    };
+  }
 
   return {
     providers: chain.map((p) => p.name),

@@ -139,3 +139,13 @@ test('ảnh: tải về rồi đưa cho LLM đọc', async () => {
   assert.ok(parts.some((p) => p.inline_data), 'phải gửi kèm ảnh cho LLM');
   assert.ok(calls.some((c) => c.url.includes('getFile') && c.body.file_id === 'big'), 'phải lấy ảnh khổ lớn nhất');
 });
+
+test('thiếu khoá API: bot vẫn trả lời /status và chỉ cho chủ bot cách sửa', async () => {
+  const env = { DB: makeD1(), TELEGRAM_TOKEN_TEST: '123:fake' }; // cố tình không có GEMINI_API_KEY
+
+  const status = await chat(tgMessage('/status'), { env });
+  assert.match(status.sent[0].text, /chưa cấu hình khoá API/);
+
+  const talk = await chat(tgMessage('chào bạn'), { env });
+  assert.match(talk.sent[0].text, /wrangler secret put GEMINI_API_KEY/);
+});

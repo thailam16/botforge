@@ -170,7 +170,7 @@ Dòng nào hỏng thì bỏ qua chứ không bao giờ lọt ra ngoài. Nhờ v�
 ```bash
 npm run setup      # tạo bot mới (chạy lại được nhiều lần)
 npm run dev        # chạy thử ngay trên máy
-npm test           # 21 bài kiểm thử, không cần mạng
+npm test           # 22 bài kiểm thử, không cần mạng
 npm run check      # soát cú pháp + cấu hình bot trước khi deploy
 npm run deploy     # đưa thay đổi lên Cloudflare
 npm run webhook    # nối lại Telegram với Worker (khi đổi tên Worker)

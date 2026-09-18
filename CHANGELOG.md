@@ -12,6 +12,6 @@ Mọi thay đổi đáng kể của BotForge được ghi ở đây, mới nhấ
   DeepSeek, Ollama, proxy riêng). Có cơ chế dự phòng khi nhà chính hết lượt.
 - Bốn plugin bật/tắt được: trí nhớ dài hạn, nhắc việc, theo dõi dinh dưỡng, sổ chi tiêu & việc cần làm.
 - Chạy 24/7 trên Cloudflare Workers (webhook + cron 5 phút), dữ liệu trong D1.
-- 21 bài kiểm thử tự động chạy được ngay trên máy, không cần mạng.
+- 22 bài kiểm thử tự động chạy được ngay trên máy, không cần mạng.
 
 **Lưu ý khi nâng cấp về sau:** sửa gì cũng ghi vào file này rồi mới deploy.

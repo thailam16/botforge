@@ -110,6 +110,11 @@ async function respond(ctx, chatId, text, fileIds, msg) {
     raw = res.text;
   } catch (err) {
     console.error('LLM lỗi:', err.message);
+    if (err.config) {
+      const secretName = ctx.bot.llm.provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY';
+      return say(ctx, chatId,
+        `⚙️ Bot chưa có khoá AI nên mình chưa nghĩ được.\nChủ bot chạy giúp: npx wrangler secret put ${secretName}`);
+    }
     return say(ctx, chatId, '😓 Mình đang trục trặc kết nối với bộ não, bạn nhắn lại sau ít phút nhé.');
   }
 
