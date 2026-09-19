@@ -1,4 +1,4 @@
-// Plugin SỔ CHI TIÊU + VIỆC CẦN LÀM (kiểu Bơ / Lisa):
+// Plugin SỔ CHI TIÊU + VIỆC CẦN LÀM:
 // nhắn "trưa nay ăn phở 45k" là ghi sổ, "nhớ mua sữa" là thêm việc.
 import { today, shiftDate } from '../core/time.js';
 

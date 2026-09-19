@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Khung sườn tạo chatbot Telegram đa năng (persona + plugin) chạy 24/7 trên Cloudflare Workers",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "start": "node scripts/setup.mjs",
     "setup": "node scripts/setup.mjs",
     "build:config": "node scripts/build-config.mjs",
     "predeploy": "npm run build:config",

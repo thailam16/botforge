@@ -3,7 +3,7 @@
 //   npm run setup
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -67,12 +67,14 @@ function wrangler(args, opts) {
 
 function saveEnv(key, value) {
   const path = join(ROOT, '.env');
+  // .env chứa khoá thật -> chỉ chủ máy đọc được
   let text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   const line = `${key}=${value}`;
   const re = new RegExp(`^${key}=.*$`, 'm');
   if (re.test(text)) text = text.replace(re, line);
   else text += `${text.endsWith('\n') || !text ? '' : '\n'}${line}\n`;
-  writeFileSync(path, text);
+  writeFileSync(path, text, { mode: 0o600 });
+  try { chmodSync(path, 0o600); } catch { /* hệ điều hành không hỗ trợ thì thôi */ }
 }
 
 function readEnv() {
@@ -99,35 +101,8 @@ ${C.dim('Mình sẽ hỏi vài câu rồi lo phần còn lại. Bấm Enter đ�
 
   // ── 1. Bộ não (LLM) ────────────────────────────────────────────
   console.log(C.b('\n── Bước 1/6: Bộ não của bot ──'));
-  const provIdx = await askChoice('Bạn dùng dịch vụ AI nào?', [
-    { label: 'Google Gemini — có gói miễn phí, đọc được ảnh (khuyến nghị)' },
-    { label: 'Tương thích OpenAI — OpenAI, OpenRouter, DeepSeek, Ollama, proxy riêng…' },
-  ]);
-  const provider = provIdx === 0 ? 'gemini' : 'openai';
-
-  let baseUrl = '';
-  if (provider === 'openai') {
-    baseUrl = await ask('Địa chỉ API (base URL):', env.OPENAI_BASE_URL || 'https://api.openai.com/v1');
-    saveEnv('OPENAI_BASE_URL', baseUrl);
-  }
-
-  const keyName = provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY';
-  const keyHint = provider === 'gemini'
-    ? 'Lấy miễn phí ở https://aistudio.google.com/apikey'
-    : 'Khoá của dịch vụ bạn chọn (để trống nếu chạy Ollama ở máy)';
-  console.log(C.dim(`  ${keyHint}`));
-  const apiKey = await ask(`Dán ${keyName}:`, env[keyName] || '');
-  if (apiKey) saveEnv(keyName, apiKey);
-
-  const model = await ask(
-    'Tên model:',
-    provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini',
-  );
-
-  const llm = createLLM(
-    { key: 'setup', llm: { provider, model, base_url: baseUrl || undefined } },
-    { [keyName]: apiKey, OPENAI_BASE_URL: baseUrl, GEMINI_BASE_URL: '' },
-  );
+  const brain = await chooseBrain(env);
+  const llm = createLLM({ key: 'setup', llm: brain.llmConfig }, brain.envForLlm);
 
   process.stdout.write('Đang thử gọi AI... ');
   try {
@@ -157,7 +132,7 @@ ${C.dim('Mình sẽ hỏi vài câu rồi lo phần còn lại. Bấm Enter đ�
 
   // ── 3. Danh tính bot ───────────────────────────────────────────
   console.log(C.b('\n── Bước 3/6: Bot của bạn tên gì, làm gì ──'));
-  const name = await ask('Tên hiển thị (ví dụ Bơ, Lisa, PT Nger):', me.first_name);
+  const name = await ask('Tên hiển thị của bot:', me.first_name);
   const key = (await ask('Mã ngắn không dấu (dùng cho đường dẫn webhook):', slug(name)))
     .toLowerCase().replace(/[^a-z0-9_-]/g, '') || slug(name);
   const emoji = await ask('Emoji đại diện:', '🤖');
@@ -233,7 +208,7 @@ ${C.dim('Mình sẽ hỏi vài câu rồi lo phần còn lại. Bấm Enter đ�
   Object.assign(bot, {
     key, name, emoji, timezone: tz,
     username: me.username,
-    llm: { provider, model, ...(baseUrl ? { base_url: baseUrl } : {}) },
+    llm: brain.llmConfig,
     access: { mode, users, groups: bot.access?.groups || [], group_trigger: [name, `@${me.username}`] },
     plugins,
   });
@@ -292,8 +267,7 @@ ${C.dim('Mình sẽ hỏi vài câu rồi lo phần còn lại. Bấm Enter đ�
   console.log(schema.code === 0 ? C.ok('xong ✓') : C.warn('bỏ qua (chạy lại bằng `npm run db:init`)'));
 
   for (const [k, v] of [
-    [keyName, apiKey],
-    ...(baseUrl ? [['OPENAI_BASE_URL', baseUrl]] : []),
+    ...brain.secrets,
     [`TELEGRAM_TOKEN_${key.toUpperCase()}`, token],
     [`WEBHOOK_SECRET_${key.toUpperCase()}`, secret],
   ]) {
@@ -339,6 +313,124 @@ Sau này muốn sửa tính cách hay tính năng: sửa ${C.b(`bots/${key}.yaml
 Muốn thêm bot thứ hai: chạy lại ${C.b('npm run setup')}.
 `);
   rl.close();
+}
+
+// Ảnh PNG 1x1 dùng để thử xem bộ não có đọc được ảnh không.
+const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/**
+ * Hỏi người dùng chọn "bộ não" cho bot.
+ *
+ * Nguyên tắc: khoá API và địa chỉ máy chủ chỉ được lưu vào .env / Cloudflare Secret.
+ * File YAML của bot chỉ ghi TÊN biến môi trường, nên đẩy lên GitHub cũng không lộ gì.
+ */
+async function chooseBrain(env) {
+  const preset = env.LLM_BASE_URL;
+  const options = [];
+  if (preset) {
+    options.push({ label: `Máy chủ AI đã cấu hình sẵn — ${hostOf(preset)}`, kind: 'preset' });
+  }
+  options.push({ label: 'Google Gemini — có gói miễn phí, đọc được ảnh', kind: 'gemini' });
+  options.push({ label: 'Máy chủ tương thích OpenAI — OpenAI, OpenRouter, DeepSeek, Ollama…', kind: 'openai' });
+  const kind = options[await askChoice('Bot sẽ dùng bộ não nào?', options)].kind;
+
+  if (kind === 'gemini') {
+    console.log(C.dim('  Lấy khoá miễn phí ở https://aistudio.google.com/apikey'));
+    const apiKey = await ask('Dán GEMINI_API_KEY:', env.GEMINI_API_KEY || '');
+    if (apiKey) saveEnv('GEMINI_API_KEY', apiKey);
+    const model = await ask('Tên model:', 'gemini-2.5-flash');
+    return {
+      llmConfig: { provider: 'gemini', model, api_key_env: 'GEMINI_API_KEY' },
+      envForLlm: { GEMINI_API_KEY: apiKey },
+      secrets: [['GEMINI_API_KEY', apiKey]],
+    };
+  }
+
+  // Máy chủ tương thích OpenAI (gồm cả máy chủ dựng sẵn của bạn)
+  const baseUrl = await ask('Địa chỉ máy chủ (base URL):', preset || 'https://api.openai.com/v1');
+  console.log(C.dim('  Khoá truy cập máy chủ đó (để trống nếu máy chủ không yêu cầu).'));
+  const apiKey = await ask('Dán khoá:', env.LLM_API_KEY || '');
+  saveEnv('LLM_BASE_URL', baseUrl);
+  if (apiKey) saveEnv('LLM_API_KEY', apiKey);
+
+  const models = await listModels(baseUrl, apiKey);
+  let model;
+  if (models.length) {
+    const pick = await askChoice('Chọn model:', [...models.map((m) => ({ label: m })), { label: 'Tự gõ tên model khác' }]);
+    model = pick < models.length ? models[pick] : await ask('Tên model:');
+  } else {
+    model = await ask('Tên model:', 'gpt-4o-mini');
+  }
+
+  // Có đọc được ảnh không? Biết trước để bot khỏi hứa suông với người dùng.
+  process.stdout.write('Đang thử xem bộ não này có đọc được ảnh không... ');
+  const vision = await probeVision(baseUrl, apiKey, model);
+  console.log(vision ? C.ok('có ✓') : C.warn('không'));
+
+  const llmConfig = {
+    provider: 'openai', model, vision,
+    base_url_env: 'LLM_BASE_URL', api_key_env: 'LLM_API_KEY',
+  };
+  const envForLlm = { LLM_BASE_URL: baseUrl, LLM_API_KEY: apiKey };
+  const secrets = [['LLM_BASE_URL', baseUrl]];
+  if (apiKey) secrets.push(['LLM_API_KEY', apiKey]);
+
+  if (!vision) {
+    console.log(C.dim('  Bộ não này chỉ đọc chữ. Muốn bot xem được ảnh (ví dụ chụp bữa ăn),\n  bạn có thể thêm một bộ não phụ chuyên việc ảnh.'));
+    if (await askYesNo('Thêm Google Gemini làm bộ não phụ cho ảnh?', false)) {
+      const gkey = await ask('Dán GEMINI_API_KEY:', env.GEMINI_API_KEY || '');
+      if (gkey) {
+        saveEnv('GEMINI_API_KEY', gkey);
+        llmConfig.fallback = { provider: 'gemini', model: await ask('Model cho ảnh:', 'gemini-2.5-flash'), api_key_env: 'GEMINI_API_KEY' };
+        envForLlm.GEMINI_API_KEY = gkey;
+        secrets.push(['GEMINI_API_KEY', gkey]);
+      }
+    }
+  }
+  return { llmConfig, envForLlm, secrets };
+}
+
+function hostOf(url) {
+  try { return new URL(url).host; } catch { return url; }
+}
+
+/** Hỏi máy chủ xem có sẵn những model nào (chuẩn OpenAI: GET /models). */
+export async function listModels(baseUrl, apiKey) {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
+      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || []).map((m) => m.id).filter(Boolean).slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+
+/** Gửi một ảnh tí hon để biết bộ não có nhìn được ảnh hay không. */
+export async function probeVision(baseUrl, apiKey, model) {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+      body: JSON.stringify({
+        model,
+        max_tokens: 20,
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: 'Ảnh này màu gì? Trả lời một từ.' },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${TINY_PNG}` } },
+        ] }],
+      }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data.choices?.[0]?.message?.content);
+  } catch {
+    return false;
+  }
 }
 
 function printManual(key, secret) {
@@ -395,8 +487,13 @@ function randomSecret() {
   return [...crypto.getRandomValues(new Uint8Array(24))].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-main().catch((err) => {
-  console.error(C.err(`\nLỗi: ${err.stack || err.message}`));
+// Chỉ chạy trình hướng dẫn khi gọi trực tiếp, để test import được các hàm phụ.
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(C.err(`\nLỗi: ${err.stack || err.message}`));
+    rl.close();
+    process.exit(1);
+  });
+} else {
   rl.close();
-  process.exit(1);
-});
+}

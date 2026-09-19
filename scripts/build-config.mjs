@@ -20,15 +20,24 @@ export function validateBot(bot, file) {
   need(bot && typeof bot === 'object', 'file rỗng hoặc sai định dạng YAML');
   if (!bot || typeof bot !== 'object') return errs;
 
-  need(/^[a-z0-9_-]+$/.test(bot.key || ''), '"key" phải có và chỉ gồm chữ thường, số, gạch ngang (ví dụ: nger)');
+  need(/^[a-z0-9_-]+$/.test(bot.key || ''), '"key" phải có và chỉ gồm chữ thường, số, gạch ngang (ví dụ: trolyai)');
   need(bot.name, '"name" (tên hiển thị của bot) không được trống');
   need(bot.persona && bot.persona.trim().length > 20, '"persona" cần mô tả vai của bot, ít nhất vài câu');
   need(bot.llm?.provider && KNOWN_PROVIDERS.includes(bot.llm.provider), `"llm.provider" phải là một trong: ${KNOWN_PROVIDERS.join(', ')}`);
   need(bot.llm?.model, '"llm.model" không được trống');
 
+  // Khoá API tuyệt đối không được nằm trong YAML (file này bị commit lên GitHub).
+  for (const [label, cfg] of [['llm', bot.llm], ['llm.fallback', bot.llm?.fallback]]) {
+    if (cfg?.api_key) errs.push(`${file}: bỏ "${label}.api_key" ra khỏi YAML — dùng "${label}.api_key_env" trỏ tới tên biến môi trường.`);
+  }
+
   if (bot.llm?.fallback) {
     need(KNOWN_PROVIDERS.includes(bot.llm.fallback.provider), `"llm.fallback.provider" phải là một trong: ${KNOWN_PROVIDERS.join(', ')}`);
     need(bot.llm.fallback.model, '"llm.fallback.model" không được trống');
+  }
+
+  if (bot.access?.mode === 'open' && !bot.rate_limit_per_hour) {
+    errs.push(`${file}: access.mode = open thì phải đặt "rate_limit_per_hour" (ví dụ 30) để không bị đốt tiền AI.`);
   }
 
   for (const name of Object.keys(bot.plugins || {})) {

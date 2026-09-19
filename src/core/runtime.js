@@ -9,7 +9,10 @@ import { parseReply } from './protocol.js';
 import { redact, wrapUntrusted } from './guardrails.js';
 import { localParts, today } from './time.js';
 
-const MEDIA_WAIT_MS = 2500; // chờ gom hết ảnh trong một chùm (album)
+const MEDIA_WAIT_MS = 2500;      // chờ gom hết ảnh trong một chùm (album)
+const MAX_TEXT_CHARS = 4000;     // cắt tin quá dài trước khi đưa cho AI
+const MAX_IMAGES = 4;            // số ảnh tối đa đọc trong một lượt
+const DEFAULT_RATE_PER_HOUR = 60; // trần số lượt gọi AI mỗi giờ cho mỗi người
 
 export function makeContext(bot, env, extra = {}) {
   const tz = bot.timezone || 'Asia/Ho_Chi_Minh';
@@ -53,7 +56,7 @@ export async function handleUpdate(update, bot, env) {
     return;
   }
 
-  const text = (msg.text || msg.caption || '').trim();
+  const text = (msg.text || msg.caption || '').trim().slice(0, MAX_TEXT_CHARS);
 
   if (text.startsWith('/')) {
     const handled = await runCommand(ctx, text);
@@ -62,6 +65,13 @@ export async function handleUpdate(update, bot, env) {
 
   if (msg.voice || msg.video_note || msg.audio) {
     return say(ctx, chatId, 'Mình chưa nghe được tin thoại, bạn gõ chữ giúp mình nhé 🙏');
+  }
+
+  // Trần số lượt: chặn hoá đơn AI phình ra nếu ai đó nhắn dồn dập
+  const quota = await checkRate(ctx, chatId);
+  if (!quota.ok) {
+    if (quota.first) await say(ctx, chatId, '🛑 Bạn nhắn hơi nhiều rồi, mình nghỉ một lát nhé — thử lại sau một giờ.');
+    return;
   }
 
   // Ảnh gửi theo chùm: gom lại rồi mới xử lý một lần
@@ -81,8 +91,12 @@ async function respond(ctx, chatId, text, fileIds, msg) {
   const { store, tg } = ctx;
   await tg.sendChatAction(chatId);
 
+  if (fileIds.length && !ctx.llm.canSeeImages) {
+    return say(ctx, chatId, '🖼 Bộ não hiện tại của mình chưa xem được ảnh. Bạn mô tả bằng chữ giúp mình nhé.');
+  }
+
   const images = [];
-  for (const fileId of fileIds.slice(0, 4)) {
+  for (const fileId of fileIds.slice(0, MAX_IMAGES)) {
     try {
       const f = await tg.downloadFile(fileId);
       images.push({ mime: f.mime, base64: f.base64 });
@@ -109,7 +123,10 @@ async function respond(ctx, chatId, text, fileIds, msg) {
     const res = await ctx.llm.chat({ system, messages, maxTokens: 2000 });
     raw = res.text;
   } catch (err) {
-    console.error('LLM lỗi:', err.message);
+    console.error('LLM lỗi:', redact(err.message));
+    if (err.noVision) {
+      return say(ctx, chatId, '🖼 Bộ não hiện tại của mình chưa xem được ảnh. Bạn mô tả bằng chữ giúp mình nhé.');
+    }
     if (err.config) {
       const secretName = ctx.bot.llm.provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY';
       return say(ctx, chatId,
@@ -301,4 +318,19 @@ async function collectMediaGroup(ctx, chatId, groupId, fileId, caption) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Đếm số lượt mỗi người trong một giờ. Lưu đúng một dòng cho mỗi người,
+ * sang giờ mới thì đếm lại từ đầu nên cơ sở dữ liệu không phình.
+ */
+async function checkRate(ctx, chatId) {
+  const limit = ctx.bot.rate_limit_per_hour ?? DEFAULT_RATE_PER_HOUR;
+  if (!limit) return { ok: true };
+  const hour = new Date().toISOString().slice(0, 13);
+  const key = `rate:${chatId}`;
+  const cur = (await ctx.store.kvGet(key)) || {};
+  const n = cur.hour === hour ? cur.n + 1 : 1;
+  await ctx.store.kvSet(key, { hour, n });
+  return { ok: n <= limit, first: n === limit + 1 };
 }

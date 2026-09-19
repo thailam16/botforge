@@ -12,7 +12,7 @@ export function wrapUntrusted(label, content) {
   return `<${label}>\n${String(content).replace(strip, '')}\n</${label}>`;
 }
 
-const SECRET_PATTERNS = [
+export const SECRET_PATTERNS = [
   /\b\d{8,10}:[A-Za-z0-9_-]{30,}\b/g,    // token bot Telegram
   /\bsk-[A-Za-z0-9_-]{16,}\b/g,          // khoá OpenAI
   /\bAIza[0-9A-Za-z_-]{30,}\b/g,         // khoá Google

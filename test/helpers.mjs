@@ -74,7 +74,10 @@ export function stubNetwork({ llmReply = 'ok', llmError = null } = {}) {
 
     if (llmError) throw Object.assign(new Error(llmError.message || 'lỗi LLM'), { status: llmError.status });
     const text = replies.length > 1 ? replies.shift() : replies[0];
-    return jsonRes({ candidates: [{ content: { parts: [{ text }] } }] });
+    // Trả đúng định dạng của từng họ API để test phản ánh thật
+    return u.includes('generativelanguage')
+      ? jsonRes({ candidates: [{ content: { parts: [{ text }] } }] })
+      : jsonRes({ choices: [{ message: { role: 'assistant', content: text } }] });
   };
 
   return { sent, calls, restore: () => { globalThis.fetch = original; } };
@@ -93,7 +96,7 @@ export function tgMessage(text, extra = {}) {
     message: {
       message_id: 1,
       chat: { id: 555, type: 'private' },
-      from: { id: 555, first_name: 'Lâm' },
+      from: { id: 555, first_name: 'An' },
       text,
       ...extra,
     },

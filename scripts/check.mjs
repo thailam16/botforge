@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Kiểm tra nhanh trước khi deploy: cú pháp mọi file + cấu hình bot hợp lệ.
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { loadBots } from './build-config.mjs';
+import { SECRET_PATTERNS } from '../src/core/guardrails.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -24,6 +25,27 @@ for (const file of [...walk(join(ROOT, 'src')), ...walk(join(ROOT, 'scripts'))])
   }
 }
 console.log(bad ? `❌ ${bad} file lỗi cú pháp` : '✅ Cú pháp: tất cả file đều ổn');
+
+// Quét khoá bí mật lỡ dán nhầm vào file sẽ bị commit lên GitHub.
+const tracked = spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+let leaks = 0;
+for (const rel of tracked) {
+  if (/^(package-lock\.json|.*\.(png|jpg|ico))$/.test(rel)) continue;
+  let text;
+  try { text = readFileSync(join(ROOT, rel), 'utf8'); } catch { continue; }
+  text.split('\n').forEach((line, i) => {
+    if (line.includes('khoa-gia')) return; // dòng tự đánh dấu là khoá giả (dùng trong test)
+    for (const re of SECRET_PATTERNS) {
+      const hit = line.match(new RegExp(re.source));
+      if (hit) {
+        console.error(`❌ ${rel}:${i + 1} có chuỗi trông như khoá bí mật (${hit[0].slice(0, 6)}…). Chuyển sang .env rồi xoá khỏi file.`);
+        leaks++;
+      }
+    }
+  });
+}
+if (leaks) bad++;
+else console.log('✅ Bí mật: không có khoá nào lọt vào file được commit');
 
 const { bots, errors } = loadBots();
 if (errors.length) {

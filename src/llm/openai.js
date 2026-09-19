@@ -14,6 +14,8 @@ export function openaiProvider({ apiKey, model, baseUrl }) {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
+          // Máy chủ đặt sau Cloudflare có thể chặn user-agent lạ, nên khai báo tử tế.
+          'user-agent': 'BotForge/1.0 (+https://github.com/topics/telegram-bot)',
           ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
         },
         body: JSON.stringify({ model, messages: msgs, max_tokens: maxTokens, temperature }),

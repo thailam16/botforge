@@ -18,9 +18,9 @@ async function chat(update, { bot = testBot(), llmReply = 'ok', llmError = null,
 
 test('tin nhắn thường: bot trả lời và nhớ lại hội thoại', async () => {
   const env = makeEnv(makeD1());
-  const { sent } = await chat(tgMessage('chào bạn'), { llmReply: 'Chào Lâm nhé!', env });
+  const { sent } = await chat(tgMessage('chào bạn'), { llmReply: 'Chào An nhé!', env });
   assert.equal(sent.length, 1);
-  assert.equal(sent[0].text, 'Chào Lâm nhé!');
+  assert.equal(sent[0].text, 'Chào An nhé!');
 
   const rows = env.DB._raw.prepare('SELECT role, content FROM messages ORDER BY id').all();
   assert.deepEqual(rows.map((r) => r.role), ['user', 'assistant']);
@@ -117,7 +117,7 @@ test('lịch chủ động: lời nhắc tới hạn thì bắn, giờ yên tĩn
 test('lịch chủ động: mỗi mốc giờ chỉ chạy một lần trong ngày', async () => {
   const env = makeEnv(makeD1());
   const bot = testBot({ plugins: { expense: { enabled: true, ask_expense_at: '21:30' } } });
-  env.DB._raw.prepare("INSERT INTO users (bot, chat_id, name, role) VALUES ('test','555','Lâm','owner')").run();
+  env.DB._raw.prepare("INSERT INTO users (bot, chat_id, name, role) VALUES ('test','555','An','owner')").run();
 
   const first = stubNetwork({});
   await runSchedules(bot, env, new Date('2026-09-19T14:31:00Z')); // 21:31 VN
@@ -148,4 +148,46 @@ test('thiếu khoá API: bot vẫn trả lời /status và chỉ cho chủ bot c
 
   const talk = await chat(tgMessage('chào bạn'), { env });
   assert.match(talk.sent[0].text, /wrangler secret put GEMINI_API_KEY/);
+});
+
+test('trần số lượt: nhắn quá nhiều thì bot dừng, không đốt thêm tiền AI', async () => {
+  const env = makeEnv(makeD1());
+  const bot = testBot({ rate_limit_per_hour: 3 });
+
+  for (let i = 0; i < 3; i++) {
+    const r = await chat(tgMessage(`tin ${i}`), { bot, llmReply: 'ừ', env });
+    assert.equal(r.sent.length, 1, `tin thứ ${i + 1} phải được trả lời`);
+  }
+  const over = await chat(tgMessage('tin thứ tư'), { bot, llmReply: 'ừ', env });
+  assert.match(over.sent[0].text, /nhắn hơi nhiều/);
+  assert.ok(!over.calls.some((c) => c.url.includes('generativelanguage')), 'không được gọi AI nữa');
+
+  const after = await chat(tgMessage('tin thứ năm'), { bot, llmReply: 'ừ', env });
+  assert.equal(after.sent.length, 0, 'các tin sau đó im lặng, không spam lại lời cảnh báo');
+});
+
+test('bộ não không đọc được ảnh: báo lịch sự và không gọi AI', async () => {
+  const bot = testBot({ llm: { provider: 'gemini', model: 'fake', vision: false } });
+  const update = tgMessage('', { photo: [{ file_id: 'big' }], caption: 'xem giúp mình' });
+  const { sent, calls } = await chat(update, { bot, llmReply: 'không nên tới đây' });
+  assert.match(sent[0].text, /chưa xem được ảnh/);
+  assert.ok(!calls.some((c) => c.url.includes('generativelanguage')), 'đừng phí một lượt gọi AI');
+});
+
+test('bộ não chính mù ảnh: lượt có ảnh tự đẩy sang bộ não phụ', async () => {
+  const bot = testBot({
+    llm: {
+      provider: 'openai', model: 'chi-doc-chu', vision: false, base_url_env: 'LLM_BASE_URL',
+      fallback: { provider: 'gemini', model: 'co-vision', api_key_env: 'GEMINI_API_KEY' },
+    },
+  });
+  const env = { ...makeEnv(makeD1()), LLM_BASE_URL: 'https://may-chu-rieng.test/v1', LLM_API_KEY: 'k' };
+
+  const withPhoto = await chat(tgMessage('', { photo: [{ file_id: 'big' }], caption: 'món này bao nhiêu calo?' }),
+    { bot, llmReply: 'Khoảng 500 kcal', env });
+  assert.ok(withPhoto.calls.some((c) => c.url.includes('generativelanguage')), 'ảnh phải đi tới bộ não có vision');
+  assert.ok(!withPhoto.calls.some((c) => c.url.includes('may-chu-rieng')), 'không gửi ảnh tới nơi không đọc được');
+
+  const textOnly = await chat(tgMessage('chào bạn'), { bot, llmReply: 'chào', env });
+  assert.ok(textOnly.calls.some((c) => c.url.includes('may-chu-rieng')), 'lượt chữ vẫn dùng bộ não chính');
 });

@@ -1,4 +1,4 @@
-// Plugin DINH DƯỠNG (kiểu PT Nger): gửi ảnh bữa ăn -> ước lượng calo/macro,
+// Plugin DINH DƯỠNG: gửi ảnh bữa ăn -> ước lượng calo/macro,
 // cộng dồn theo ngày, theo dõi cân nặng & buổi tập.
 // Nguyên tắc: LLM chỉ NHẬN DIỆN món ăn; mọi phép cộng và chỉ số BMR/TDEE do code tính.
 import { today, shiftDate, localParts } from '../core/time.js';

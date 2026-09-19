@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Nối Telegram với Worker (chạy lại mỗi khi đổi tên Worker hoặc thêm bot).
 //   npm run webhook              -> nối tất cả bot
-//   npm run webhook -- nger      -> chỉ bot "nger"
+//   npm run webhook -- tenbot    -> chỉ một bot
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
